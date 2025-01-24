@@ -1,0 +1,128 @@
+### Project Finance Tool ###
+
+#Starting Point for Globals that Change
+Total_TCI = 0 # Setting Starting Point of TCI
+Total_CF = 0  # Setting Starting Point of CF
+
+#Time Periods
+T_CONSTRUCTION = 10 # Construction Length
+T_OPS = 60 # Operational Life
+T_DEBT = 20 # Debt Term
+
+##Global Values for Construction
+SD = 1 / T_CONSTRUCTION # Per Period Spend Distribution
+DR = 0.05 # Debt Rate
+EW = 0.5 # Equity Weight
+ER = 0.025 # Escalation Rate
+OCC = 500000 # Overnight Capital Cost
+
+#Global Values for Operation
+PLANT_SIZE_MWE = 1000 # Nameplate Capacity in MWe
+PLANT_SIZE_KWE = PLANT_SIZE_MWE * 1000 # Nameplate Capacity in kWe
+CAP_FAC = .93 # Capacity Factor
+HOURS = 8760 # Hours in a year
+
+PRICE = 100 # Power Price in $/MWh
+VAR = 45 # Variable Cost in $/MWh, includes fuel
+FIXED = 250 # Fixed cost in $/kWe
+
+PRINC_START = Total_TCI/(1-EW) # Starting Loan Principle
+TOTAL_DEBT_PMT = PRINC_START / (((1 + DR) ** T_DEBT - 1) / (DR * (1 + DR) ** T_DEBT)) # Total debt payment
+MARCS_t = [.05, 0.095, 0.0855, 0.077, 0.0693, 0.0623, 0.059, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.0295] # Depretiation Schedule
+TAX_RATE = .27 # Taxrate inclusive of federal and state taxes
+
+##Defining Key Equations
+#Construction Equations
+def calc_TCI(t):
+   return SD * OCC * EW * (1 + ER) ** t + SD * OCC * (1 - EW) * (1 + ER) * (1 + DR) ** (T_CONSTRUCTION - t)
+
+#Cashflow Equations
+def calc_cashflow(t):
+    return rev_t - var_om_t - fixed_om_t - dep_t(t) - int_exp_t(t) - tax_t(t) + tax_credit_t() + dep_t(t) - (TOTAL_DEBT_PMT - int_exp_t(t))
+
+rev_t = PRICE * PLANT_SIZE_MWE * HOURS * CAP_FAC # Revenue
+var_om_t = VAR * PLANT_SIZE_MWE * HOURS * CAP_FAC
+fixed_om_t = FIXED * PLANT_SIZE_KWE
+
+def dep_t(t): # Depreciation
+    if 1 <= t <= 15: #This needs to be edited if an alternative MARCS schedule is used
+        macrs_prev_t = MARCS_t[t - 1]
+        return Total_TCI * macrs_prev_t
+    else:
+        return 0
+
+# Debt Schedule
+def int_exp_t(t): # Interest expense paid
+    if t == 1:
+        return Total_TCI * (1 - EW) * DR
+    if 2 <= t <= T_DEBT:
+        return princ_t_start(t) * DR
+    else:
+        return 0
+
+def princ_t_start(t): # Starting Principle Blance
+    if t == 1:
+        return Total_TCI * (1 - EW)
+    if 0 <= t <= T_DEBT:
+         return princ_t_end(t - 1)
+    else:
+        return 0
+
+def princ_t_end(t): # Ending Principle Balance
+    if 0 <= t <= T_DEBT:
+         return princ_t_start(t) - (TOTAL_DEBT_PMT - int_exp_t(t))
+    else:
+        return 0
+
+def tax_t(t): # Taxes paid at time t
+    if (ebt_t(t) * TAX_RATE) <= 0:
+        return 0 # This assumes that a firm is small and cannot offset excess tax liability with other profitable projects
+    else:
+        return -(ebt_t(t) * TAX_RATE) # Remove this code if the intention is to assume that the above is not true. i.e. the firm can use other profits to offset excess tax liabilities
+
+def tax_credit_t():
+    return 0
+
+ebitda_t = rev_t - var_om_t - fixed_om_t # Earnings before interest taxes depretiation ammoritization
+
+def ebit_t(t): # Earnings before interest taxes
+    return ebitda_t - dep_t(t)
+
+def ebt_t(t): # Earnings before taxes
+    return ebit_t(t) - int_exp_t(t)
+
+def e_t(t): # Earnings
+    return ebt_t(t) - tax_t(t) + tax_credit_t(t)
+
+def cf_t(t): # Cashflow
+    return e_t(t) + dep_t(t)
+
+# #-----#Construction Calculation Loop#-----#
+# def Const_Scenario(T_CONSTRUCTION):
+#     Total_TCI = 0 # Setting Starting Point of TCI
+#     for t in range(1, T_CONSTRUCTION + 1):
+#         TCI_t = calc_TCI(t)
+#         Total_TCI += TCI_t
+#         print(f"Construction Year {t}: ${TCI_t:,.0f}")
+#     print(f"Cumulative TCI = ${Total_TCI:,.0f}")
+
+# Const_Scenario(T_CONSTRUCTION)
+#-------------------------------------------#
+def Const_Scenario(T_CONSTRUCTION):
+    global Total_TCI  # Declare Total_TCI as global to modify it   
+    for t in range(1, T_CONSTRUCTION + 1):
+        TCI_t = calc_TCI(t)
+        Total_TCI += TCI_t
+
+def Operation_Scenario(T_CONSTRUCTION, T_OPS, T_DEBT):
+    global Total_CF  # Declare Total_CF as global to modify it
+    
+    for t in range(1,T_OPS + 1):
+        cashflow_t = calc_cashflow(t)
+        Total_CF += cashflow_t
+        print(f"Operation Year Cashflow {t}: ${cashflow_t:,.0f}")
+    print(f"Cumulative Cashflow = ${Total_CF:,.0f}")
+# #-----#Construction Calculation Loop#------#
+
+Const_Scenario(T_CONSTRUCTION)
+Operation_Scenario(T_CONSTRUCTION,T_OPS,T_DEBT)
